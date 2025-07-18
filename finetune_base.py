@@ -12,27 +12,54 @@ from lm_eval import evaluator
 
 from utils import Adafactor
 
-def hellaswag_dataset(tokenizer, split="train"):
+def hellaswag_dataset(tokenizer, split: str = "train"):
     """
-    HellaSwag rows → single causal‑LM string:
-    <ctx> <gold ending> <eos>
+    Converts HellaSwag rows into a single causal‑LM string:
+
+        <ctx> <gold ending> <eos>
+
+    • `input_ids`, `attention_mask` – as usual  
+    • `loss_mask` – 1 for tokens from the gold ending (incl. <eos>), 0 otherwise
     """
+    # ---------- preprocess ----------
     def add_text(row):
         gold = row["endings"][int(row["label"])]
         row["text"] = row["ctx"] + " " + gold + tokenizer.eos_token
+        # token count of the context only (no special tokens)
+        row["ctx_len"] = len(tokenizer(row["ctx"],
+                                       add_special_tokens=False)["input_ids"])
         return row
 
     ds = load_dataset("Rowan/hellaswag", split=split)
-    ds = ds.map(add_text, remove_columns=ds.column_names)
+    ds = ds.map(add_text)
+    ds = ds.remove_columns([c for c in ds.column_names
+                            if c not in ("text", "ctx_len")])
 
+    # ---------- batch collation ----------
     def collate(batch):
-        enc = tokenizer(
-            [s["text"] for s in batch],
-            padding="max_length",
-            max_length=160,
-            return_tensors="pt",
-        )
-        return {"input_ids": enc.input_ids, "attention_mask": enc.attention_mask}
+        texts     = [ex["text"]     for ex in batch]
+        ctx_lens  = [ex["ctx_len"]  for ex in batch]
+
+        enc = tokenizer(texts,
+                        padding="max_length",
+                        max_length=160,
+                        return_tensors="pt")
+
+        # build loss mask (1 = predict, 0 = ignore)
+        seq_len   = enc.input_ids.size(1)
+        loss_mask = torch.zeros_like(enc.input_ids, dtype=torch.float)
+
+        for i, l in enumerate(ctx_lens):
+            l = min(l, seq_len)          # safety
+            loss_mask[i, l:] = 1         # gold ending + <eos>
+
+        loss_mask *= enc.attention_mask   # drop padding positions
+
+        return {
+            "input_ids":      enc.input_ids,
+            "attention_mask": enc.attention_mask,
+            "loss_mask":      loss_mask,
+        }
 
     return ds, collate
 
@@ -104,7 +131,7 @@ def main(args):
             shift_labels = batch["input_ids"][:, 1:]
             loss_fct = nn.CrossEntropyLoss(reduction='none')
             loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.reshape(-1))
-            loss = (loss * batch["attention_mask"][:,:-1].flatten()).mean()
+            loss = (loss * batch["loss_mask"][:,:-1].flatten()).mean()
 
             loss.backward()
             optim.step(); optim.zero_grad()

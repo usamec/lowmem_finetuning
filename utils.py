@@ -138,7 +138,7 @@ class Adafactor(Optimizer):
 
         return loss
 
-def adafactor_step(p, lr, beta2=0.99, factored_eps=1e-30, unfactored_eps=1e-30):
+def adafactor_step(p, lr, beta2=0.99, factored_eps=1e-30, unfactored_eps=1e-30, nostround=False):
     g: Tensor = p.grad
 
     state = p.state
@@ -192,5 +192,7 @@ def adafactor_step(p, lr, beta2=0.99, factored_eps=1e-30, unfactored_eps=1e-30):
     update = update / (update.norm()+1e-20) * p.data.norm()
 
     # Parameter update: θ ← θ − lr ⋅ g / denom
-    p.data = add_scaled_bf16(p.data, update, -lr)
-
+    if nostround:
+        p.add_(update, alpha=-lr)
+    else:
+        p.data = add_scaled_bf16(p.data, update, -lr)
