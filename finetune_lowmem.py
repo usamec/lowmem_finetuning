@@ -151,6 +151,6 @@ if __name__ == "__main__":
     p.add_argument("--lr", type=float, default=1e-4)
     p.add_argument("--epochs", type=int, default=3)
     p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--log_every", type=int, default=100)
+    p.add_argument("--log_every", type=int, default=400)
     args = p.parse_args()
     main(args)
