@@ -26,6 +26,8 @@ To reduce memory consumption, we start with Adafactor optimizer and apply the fo
 * Using a smaller batch size. This reduces memory and also improves results, as shown in https://arxiv.org/abs/2507.07101.
 * Using bf16 weights. But if we use them naively, this would not work, because bf16 has very low precision, and in bf16 1 + 0.001 = 1. Thus we use stochastic rounding during optimizer update step.
 
+This can be run using `python finetune_lowmem.py --run-name LowMem`.
+
 ### Results
 
 We finetune Llama-3.2-1B.
